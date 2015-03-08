@@ -1,5 +1,5 @@
-#![allow(dead_code)]
-#![feature(core, env, old_io, old_path)]
+/*#![allow(dead_code)]
+#![feature(core, exit_status, old_io, old_path)]
 
 extern crate cbor;
 extern crate docopt;
@@ -139,4 +139,4 @@ fn main() {
         io::stderr().write_str(&format!("{}", err)).unwrap();
         env::set_exit_status(1);
     }
-}
+}*/

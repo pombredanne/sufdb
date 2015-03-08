@@ -10,18 +10,29 @@ keywords = ["suffix", "text", "search", "index", "database"]
 license = "Unlicense"
 
 [[bin]]
-name = "sufdb"
-path = "src/main.rs"
+name = "sufdb-tree"
+path = "src/btree.rs"
 doc = false
 test = false
 bench = false
+
+# [[bin]]
+# name = "sufdb"
+# path = "src/main.rs"
+# doc = false
+# test = false
+# bench = false
 
 [profile.release]
 opt-level = 3
 lto = true
 
 [dependencies]
-cbor = "*"
-docopt = "*"
-rustc-serialize = "*"
-suffix = "*"
+# cbor = "*"
+# docopt = "*"
+# rustc-serialize = "0.2.0"
+# suffix = "*"
+
+[dependencies.suffix]
+version = "*"
+path = "/home/andrew/data/projects/rust/suffix"

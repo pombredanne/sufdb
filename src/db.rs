@@ -1,4 +1,4 @@
-use std::cmp;
+/*use std::cmp;
 use std::fmt;
 use std::iter::AdditiveIterator;
 
@@ -139,4 +139,4 @@ impl<'i> Ord for SearchResult<'i> {
     fn cmp<'j>(&self, o: &SearchResult<'j>) -> cmp::Ordering {
         self.partial_cmp(o).unwrap()
     }
-}
+}*/
