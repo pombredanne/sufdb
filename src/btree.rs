@@ -25,9 +25,17 @@ struct SufDB {
     order: usize,
 }
 
+/// Index into document storage.
 type DocId = usize;
+
+/// Index to a suffix in a single document.
 type SuffixId = usize;
+
+/// Index into node storage.
 type NodeId = usize;
+
+/// Index into suffix keys in a single node.
+type KeyId = usize;
 
 /// A btree node.
 enum Node {
@@ -41,7 +49,7 @@ struct Internal {
     /// Pointers to suffixes.
     suffixes: Vec<Suffix>,
     /// Pointers to child nodes. Always has `suffixes.len() + 1` edges.
-    edges: Vec<usize>,
+    edges: Vec<KeyId>,
 }
 
 /// Leaf nodes point to suffixes in a documents.
@@ -107,25 +115,47 @@ impl SufDB {
     ///
     /// When a suffix is found, this implies that the suffix that immediately
     /// precedes `result` satisfies `needle > prev_result`.
-    fn search_start(&self, needle: &str) -> Option<&Suffix> {
+    fn search(&self, needle: &str) -> Option<&Suffix> {
+        let (nid_start, k_start) = self.search_start_linear(self.root, needle);
+        let (nid_stop, k_stop) = self.search_stop_linear(self.root, needle);
+        None
     }
 
-    fn search_node_linear<F>(
-        &self,
-        id: NodeId,
-        needle: &str,
-        pred: F,
-    ) -> Option<&Suffix> where F: Fn(&str) -> bool {
-        let mut i: usize = 0;
+    fn search_start_linear(&self, id: NodeId, needle: &str)
+            -> (NodeId, Option<KeyId>) {
+        let mut found: Option<KeyId> = None;
         for (i, suf) in self.nodes[id].suffixes().iter().enumerate() {
-            if pred(self.suffix(suf)) {
-                found = i;
-                break;
+            if needle >= self.suffix(suf) {
+                found = Some(i);
+                break
             }
         }
-        if self.nodes[id].is_leaf() {
-            Some(&self.nodes[i].suffixes()[i])
-        } else {
+        match self.nodes[id] {
+            Node::Leaf(_) => (id, found),
+            Node::Internal(ref n) => {
+                let notfound = 0;
+                let child = n.edges[found.map(|i| i + 1).unwrap_or(notfound)];
+                self.search_start_linear(child, needle)
+            }
+        }
+    }
+
+    fn search_stop_linear(&self, id: NodeId, needle: &str)
+            -> (NodeId, Option<KeyId>) {
+        let mut found: Option<KeyId> = None;
+        for (i, suf) in self.nodes[id].suffixes().iter().enumerate().rev() {
+            if needle <= self.suffix(suf) {
+                found = Some(i);
+                break
+            }
+        }
+        match self.nodes[id] {
+            Node::Leaf(_) => (id, found),
+            Node::Internal(ref n) => {
+                let notfound = self.nodes[id].suffixes().len();
+                let child = n.edges[found.unwrap_or(notfound)];
+                self.search_stop_linear(child, needle)
+            }
         }
     }
 }
@@ -159,8 +189,8 @@ impl SufDB {
 impl Node {
     fn is_leaf(&self) -> bool {
         match *self {
-            Node::Internal => false,
-            Node::Leaf => true,
+            Node::Internal(_) => false,
+            Node::Leaf(_) => true,
         }
     }
 
