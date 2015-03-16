@@ -2,10 +2,10 @@
 name = "sufdb"
 version = "0.1.0"
 dependencies = [
- "suffix 0.2.2",
+ "suffix 0.2.3",
 ]
 
 [[package]]
 name = "suffix"
-version = "0.2.2"
+version = "0.2.3"
 

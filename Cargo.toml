@@ -9,12 +9,10 @@ readme = "README.md"
 keywords = ["suffix", "text", "search", "index", "database"]
 license = "Unlicense"
 
-[[bin]]
+[lib]
 name = "sufdb-tree"
 path = "src/btree.rs"
 doc = false
-test = false
-bench = false
 
 # [[bin]]
 # name = "sufdb"

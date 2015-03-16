@@ -4,14 +4,25 @@ memory. As such, its primary purpose is to minimize the number disk IOs, where
 accessing any particular `Node` would count as a single disk IO. (Becuase we
 will stipulate that a `Node` fits on a single page.)
 */
-#![allow(dead_code, unused_variables)]
+#![feature(io)]
+#![allow(dead_code, unused_features, unused_imports, unused_variables)]
 
 extern crate suffix;
 
-use std::borrow::IntoCow;
+use std::borrow::{Cow, IntoCow};
+use std::fmt;
+use std::iter;
 use suffix::SuffixTable;
 
+macro_rules! lg {
+    ($($tt:tt)*) => ({
+        use std::io::{Write, stderr};
+        (writeln!(&mut stderr(), $($tt)*)).unwrap();
+    });
+}
+
 /// A suffix database represented with a btree.
+#[derive(Debug)]
 struct SufDB {
     /// All nodes in the tree.
     nodes: Vec<Node>,
@@ -38,27 +49,19 @@ type NodeId = usize;
 type KeyId = usize;
 
 /// A btree node.
-enum Node {
-    Internal(Internal),
-    Leaf(Leaf),
-}
-
-/// An internal node. Internal nodes duplicate the suffix keys that are
-/// present in leaf nodes.
-struct Internal {
-    /// Pointers to suffixes.
-    suffixes: Vec<Suffix>,
-    /// Pointers to child nodes. Always has `suffixes.len() + 1` edges.
+#[derive(Debug)]
+struct Node {
+    /// Pointers to child nodes. Always has `suffixes.len() + 1` edges when
+    /// `Node` is internal. Otherwise has `zero` edges when `Node` is a leaf.
     edges: Vec<KeyId>,
-}
-
-/// Leaf nodes point to suffixes in a documents.
-struct Leaf {
     /// Pointers to suffixes.
     suffixes: Vec<Suffix>,
+    prev: Option<NodeId>,
+    next: Option<NodeId>,
 }
 
 /// A document is contiguous sequence of UTF-8 bytes.
+#[derive(Debug)]
 struct Document(String);
 
 impl ::std::ops::Deref for Document {
@@ -81,7 +84,7 @@ impl SufDB {
 
     fn with_order(order: usize) -> SufDB {
         SufDB {
-            nodes: vec![Node::Leaf(Leaf::empty())],
+            nodes: vec![Node::empty()],
             root: 0,
             documents: vec![],
             order: order,
@@ -101,9 +104,33 @@ impl SufDB {
     }
 }
 
+#[derive(Debug)]
 enum SearchResult {
-    Internal(Suffix),
-    Leaf(Suffix),
+    Found(NodeId, KeyId),
+    InsertAt(NodeId, KeyId),
+}
+
+impl SearchResult {
+    fn found(&self) -> bool {
+        match *self {
+            SearchResult::Found(_, _) => true,
+            SearchResult::InsertAt(_, _) => false,
+        }
+    }
+
+    fn ok(self) -> Option<(NodeId, KeyId)> {
+        match self {
+            SearchResult::Found(node_id, key_id) => Some((node_id, key_id)),
+            _ => None,
+        }
+    }
+
+    fn ids(&self) -> (NodeId, KeyId) {
+        match *self {
+            SearchResult::Found(node_id, key_id) => (node_id, key_id),
+            SearchResult::InsertAt(node_id, key_id) => (node_id, key_id),
+        }
+    }
 }
 
 impl SufDB {
@@ -115,47 +142,63 @@ impl SufDB {
     ///
     /// When a suffix is found, this implies that the suffix that immediately
     /// precedes `result` satisfies `needle > prev_result`.
-    fn search(&self, needle: &str) -> Option<&Suffix> {
-        let (nid_start, k_start) = self.search_start_linear(self.root, needle);
-        let (nid_stop, k_stop) = self.search_stop_linear(self.root, needle);
-        None
-    }
-
-    fn search_start_linear(&self, id: NodeId, needle: &str)
-            -> (NodeId, Option<KeyId>) {
-        let mut found: Option<KeyId> = None;
-        for (i, suf) in self.nodes[id].suffixes().iter().enumerate() {
-            if needle >= self.suffix(suf) {
-                found = Some(i);
-                break
-            }
-        }
-        match self.nodes[id] {
-            Node::Leaf(_) => (id, found),
-            Node::Internal(ref n) => {
-                let notfound = 0;
-                let child = n.edges[found.map(|i| i + 1).unwrap_or(notfound)];
-                self.search_start_linear(child, needle)
-            }
+    fn search<'d, 's, S>(&'d self, needle: S) -> Suffixes<'d, 's>
+            where S: IntoCow<'s, str> {
+        let needle = needle.into_cow();
+        let cur = self.search_start(&needle).ok();
+        Suffixes {
+            db: self,
+            needle: needle,
+            cur: cur,
         }
     }
 
-    fn search_stop_linear(&self, id: NodeId, needle: &str)
-            -> (NodeId, Option<KeyId>) {
-        let mut found: Option<KeyId> = None;
-        for (i, suf) in self.nodes[id].suffixes().iter().enumerate().rev() {
+    fn contains<'s, S>(&self, needle: S) -> bool where S: IntoCow<'s, str> {
+        self.search(needle).next().is_some()
+    }
+
+    fn search_insert_at(&self, needle: &str) -> (NodeId, KeyId) {
+        self.search_start(needle).ids()
+    }
+
+    fn search_start(&self, needle: &str) -> SearchResult {
+        self.search_start_from(self.root, needle)
+    }
+
+    fn search_start_from(&self, nid: NodeId, needle: &str) -> SearchResult {
+        let node = &self.nodes[nid];
+        let mut kid: Option<KeyId> = None;
+        for (i, suf) in node.suffixes.iter().enumerate() {
             if needle <= self.suffix(suf) {
-                found = Some(i);
+                kid = Some(i);
                 break
             }
         }
-        match self.nodes[id] {
-            Node::Leaf(_) => (id, found),
-            Node::Internal(ref n) => {
-                let notfound = self.nodes[id].suffixes().len();
-                let child = n.edges[found.unwrap_or(notfound)];
-                self.search_stop_linear(child, needle)
+        let notfound = node.suffixes.len();
+        match (node.is_leaf(), kid) {
+            (true, None) => SearchResult::InsertAt(nid, notfound),
+            (true, Some(kid)) => {
+                if self.suffix(&node.suffixes[kid]).starts_with(needle) {
+                    SearchResult::Found(nid, kid)
+                } else {
+                    SearchResult::InsertAt(nid, kid)
+                }
             }
+            (false, None) => {
+                self.search_start_from(node.edges[notfound], needle)
+            }
+            (false, Some(kid)) => {
+                self.search_start_from(node.edges[kid], needle)
+            }
+        }
+    }
+
+    fn next_suffix(&self, nid: NodeId, kid: KeyId) -> Option<(NodeId, KeyId)> {
+        let node = &self.nodes[nid];
+        if kid + 1 >= node.suffixes.len() {
+            node.next.map(|nid| (nid, 0))
+        } else {
+            Some((nid, kid + 1))
         }
     }
 }
@@ -178,8 +221,10 @@ impl SufDB {
     }
 
     fn insert_suffix(&mut self, suf: Suffix) {
-        let root = self.root;
-        self.insert_at(suf, root)
+        let (nid, kid) = self.search_insert_at(self.suffix(&suf));
+        lg!("Inserting {:?} ('{}') at ({:?}, {:?})",
+            suf, self.suffix(&suf), nid, kid);
+        self.nodes[nid].suffixes.insert(kid, suf);
     }
 
     fn insert_at(&mut self, suf: Suffix, nid: NodeId) {
@@ -187,27 +232,92 @@ impl SufDB {
 }
 
 impl Node {
-    fn is_leaf(&self) -> bool {
-        match *self {
-            Node::Internal(_) => false,
-            Node::Leaf(_) => true,
-        }
-    }
-
-    fn suffixes(&self) -> &[Suffix] {
-        match *self {
-            Node::Internal(ref n) => &n.suffixes,
-            Node::Leaf(ref n) => &n.suffixes,
-        }
-    }
-}
-
-impl Leaf {
-    fn empty() -> Leaf {
-        Leaf {
+    fn empty() -> Node {
+        Node {
+            edges: vec![],
             suffixes: vec![],
+            prev: None,
+            next: None,
+        }
+    }
+
+    fn is_leaf(&self) -> bool {
+        self.edges.is_empty()
+    }
+}
+
+impl<'a, S> iter::FromIterator<S> for SufDB where S: IntoCow<'a, str> {
+    fn from_iter<I>(docs: I) -> SufDB where I: iter::IntoIterator<Item=S> {
+        let mut db = SufDB::new();
+        db.extend(docs);
+        db
+    }
+}
+
+impl<'a, S> iter::Extend<S> for SufDB where S: IntoCow<'a, str> {
+    fn extend<I>(&mut self, docs: I) where I: iter::IntoIterator<Item=S> {
+        for doc in docs {
+            self.insert(doc);
         }
     }
 }
 
-fn main() {}
+impl fmt::Debug for Suffix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Suffix({}, {})", self.docid, self.sufid)
+    }
+}
+
+#[derive(Debug)]
+struct Suffixes<'d, 's> {
+    db: &'d SufDB,
+    needle: Cow<'s, str>,
+    cur: Option<(NodeId, KeyId)>,
+}
+
+impl<'d, 's> Iterator for Suffixes<'d, 's> {
+    type Item = &'d Suffix;
+
+    fn next(&mut self) -> Option<&'d Suffix> {
+        if let Some((nid, kid)) = self.cur {
+            let suf = &self.db.nodes[nid].suffixes[kid];
+            if self.db.suffix(suf).starts_with(&self.needle) {
+                self.cur = self.db.next_suffix(nid, kid);
+                Some(&self.db.nodes[nid].suffixes[kid])
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
+mod tests {
+    use std::borrow::IntoCow;
+    use std::iter::{FromIterator, IntoIterator};
+    use super::SufDB;
+
+    fn createdb<'a, I>(docs: I) -> SufDB
+            where I: IntoIterator,
+                  <I as IntoIterator>::Item: IntoCow<'a, str> {
+        FromIterator::from_iter(docs)
+    }
+
+    #[test]
+    fn search_one() {
+        let db = createdb(vec!["banana"]);
+        lg!("{:?}", db);
+        for suf in db.search("n") {
+            lg!("{:?}: {:?}", suf, db.suffix(suf));
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn scratch() {
+        let mut db = SufDB::new();
+        db.insert("banana");
+        lg!("{:?}", db);
+    }
+}

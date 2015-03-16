@@ -140,3 +140,4 @@ fn main() {
         env::set_exit_status(1);
     }
 }*/
+#[allow(dead_code)] fn main() {}
