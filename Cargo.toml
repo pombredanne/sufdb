@@ -29,8 +29,8 @@ lto = true
 # cbor = "*"
 # docopt = "*"
 # rustc-serialize = "0.2.0"
-# suffix = "*"
+suffix = "*"
 
-[dependencies.suffix]
-version = "*"
-path = "/home/andrew/data/projects/rust/suffix"
+# [dependencies.suffix]
+# version = "*"
+# path = "/home/andrew/data/projects/rust/suffix"
