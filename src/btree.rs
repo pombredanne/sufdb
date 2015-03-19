@@ -4,8 +4,8 @@ memory. As such, its primary purpose is to minimize the number disk IOs, where
 accessing any particular `Node` would count as a single disk IO. (Becuase we
 will stipulate that a `Node` fits on a single page.)
 */
-#![feature(io)]
-#![allow(dead_code, unused_features, unused_imports, unused_variables)]
+
+#![allow(dead_code, unused_imports, unused_variables)]
 
 extern crate suffix;
 
@@ -70,11 +70,18 @@ impl ::std::ops::Deref for Document {
 }
 
 /// Represents a single suffix in a document.
+#[derive(Eq, Hash, PartialEq)]
 struct Suffix {
     /// Document index.
     docid: DocId,
     /// Suffix index in document.
     sufid: SuffixId,
+}
+
+impl Suffix {
+    fn new(docid: DocId, sufid: SuffixId) -> Suffix {
+        Suffix { docid: docid, sufid: sufid }
+    }
 }
 
 impl SufDB {
@@ -222,8 +229,6 @@ impl SufDB {
 
     fn insert_suffix(&mut self, suf: Suffix) {
         let (nid, kid) = self.search_insert_at(self.suffix(&suf));
-        lg!("Inserting {:?} ('{}') at ({:?}, {:?})",
-            suf, self.suffix(&suf), nid, kid);
         self.nodes[nid].suffixes.insert(kid, suf);
     }
 
@@ -279,6 +284,9 @@ impl<'d, 's> Iterator for Suffixes<'d, 's> {
     type Item = &'d Suffix;
 
     fn next(&mut self) -> Option<&'d Suffix> {
+        if self.needle.is_empty() {
+            return None;
+        }
         if let Some((nid, kid)) = self.cur {
             let suf = &self.db.nodes[nid].suffixes[kid];
             if self.db.suffix(suf).starts_with(&self.needle) {
@@ -295,8 +303,11 @@ impl<'d, 's> Iterator for Suffixes<'d, 's> {
 
 mod tests {
     use std::borrow::IntoCow;
+    use std::collections::HashSet;
+    use std::fmt::Debug;
+    use std::hash::Hash;
     use std::iter::{FromIterator, IntoIterator};
-    use super::SufDB;
+    use super::{SufDB, Suffix, DocId, SuffixId};
 
     fn createdb<'a, I>(docs: I) -> SufDB
             where I: IntoIterator,
@@ -304,13 +315,49 @@ mod tests {
         FromIterator::from_iter(docs)
     }
 
+    fn suf(d: DocId, s: SuffixId) -> Suffix { Suffix::new(d, s) }
+
+    fn assert_set_eq<T>(a: T, b: T)
+            where T: IntoIterator,
+                  <T as IntoIterator>::Item: Debug + Eq + Hash {
+        let s1: HashSet<<T as IntoIterator>::Item> = a.into_iter().collect();
+        let s2: HashSet<<T as IntoIterator>::Item> = b.into_iter().collect();
+        assert_eq!(s1, s2);
+    }
+
     #[test]
     fn search_one() {
         let db = createdb(vec!["banana"]);
-        lg!("{:?}", db);
-        for suf in db.search("n") {
-            lg!("{:?}: {:?}", suf, db.suffix(suf));
-        }
+        assert!(db.contains("ana"));
+        assert!(db.contains("a"));
+        assert!(!db.contains(""));
+        assert!(!db.contains("z"));
+    }
+
+    #[test]
+    fn search_two() {
+        let db = createdb(vec!["banana", "apple"]);
+        assert!(db.contains("ana"));
+        assert!(db.contains("a"));
+        assert!(db.contains("apple"));
+        assert!(db.contains("banana"));
+        assert!(!db.contains(""));
+        assert!(!db.contains("z"));
+        assert!(!db.contains("aa")); // make sure suffixes are separate!
+    }
+
+    #[test]
+    fn search_two_similar() {
+        let db = createdb(vec!["maple", "apple"]);
+        let results: Vec<_> = db.search("ple").collect();
+        assert_set_eq(results, vec![&suf(0, 2), &suf(1, 2)]);
+    }
+
+    #[test]
+    fn search_two_snowmen() {
+        let db = createdb(vec!["☃abc☃", "apple"]);
+        let results: Vec<_> = db.search("☃").collect();
+        assert_set_eq(results, vec![&suf(0, 0), &suf(0, 6)]);
     }
 
     #[test]
