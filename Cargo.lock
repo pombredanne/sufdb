@@ -1,6 +1,6 @@
 [root]
 name = "sufdb"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "suffix 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
