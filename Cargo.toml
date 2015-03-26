@@ -10,7 +10,8 @@ keywords = ["suffix", "text", "search", "index", "database"]
 license = "Unlicense"
 
 [lib]
-name = "sufdb-tree"
+# name = "sufdb-tree"
+name = "sufdb_tree" # temporary
 path = "src/btree.rs"
 doc = false
 

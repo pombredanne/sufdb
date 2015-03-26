@@ -5,12 +5,12 @@ accessing any particular `Node` would count as a single disk IO. (Becuase we
 will stipulate that a `Node` fits on a single page.)
 */
 
-#![feature(collections)]
+#![feature(collections, into_cow)]
 #![allow(dead_code, unused_imports, unused_variables)]
 
 extern crate suffix;
 
-use std::borrow::{Cow, IntoCow};
+use std::borrow::{Borrow, Cow, IntoCow};
 use std::fmt;
 use std::iter::{self, repeat};
 use suffix::SuffixTable;
@@ -343,7 +343,8 @@ impl<'d, 's> Iterator for Suffixes<'d, 's> {
         }
         if let Some((nid, kid)) = self.cur {
             let suf = &self.db.nodes[nid].suffixes[kid];
-            if self.db.suffix(suf).starts_with(&self.needle) {
+            let needle: &str = self.needle.borrow();
+            if self.db.suffix(suf).starts_with(needle) {
                 self.cur = self.db.next_suffix(nid, kid);
                 Some(&self.db.nodes[nid].suffixes[kid])
             } else {

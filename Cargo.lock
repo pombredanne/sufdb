@@ -2,11 +2,11 @@
 name = "sufdb"
 version = "0.1.4"
 dependencies = [
- "suffix 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "suffix 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "suffix"
-version = "0.2.6"
+version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
