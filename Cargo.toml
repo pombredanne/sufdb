@@ -7,7 +7,7 @@ homepage = "https://github.com/BurntSushi/sufdb"
 repository = "https://github.com/BurntSushi/sufdb"
 readme = "README.md"
 keywords = ["suffix", "text", "search", "index", "database"]
-license = "Unlicense"
+license = "Unlicense/MIT"
 
 [lib]
 # name = "sufdb-tree"
