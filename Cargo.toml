@@ -1,6 +1,6 @@
 [package]
 name = "sufdb"
-version = "0.1.5"  #:version
+version = "0.1.6"  #:version
 authors = ["Andrew Gallant <jamslam@gmail.com>"]
 description = "Command line tool for searching documents with suffix arrays."
 homepage = "https://github.com/BurntSushi/sufdb"
