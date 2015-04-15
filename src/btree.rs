@@ -5,12 +5,12 @@ accessing any particular `Node` would count as a single disk IO. (Becuase we
 will stipulate that a `Node` fits on a single page.)
 */
 
-#![feature(collections, into_cow)]
+#![feature(collections)]
 #![allow(dead_code, unused_imports, unused_variables)]
 
 extern crate suffix;
 
-use std::borrow::{Borrow, Cow, IntoCow};
+use std::borrow::{Borrow, Cow};
 use std::fmt;
 use std::iter::{self, repeat};
 use suffix::SuffixTable;
@@ -148,8 +148,8 @@ impl SearchResult {
 
 impl SufDB {
     fn search<'d, 's, S>(&'d self, needle: S) -> Suffixes<'d, 's>
-            where S: IntoCow<'s, str> {
-        let needle = needle.into_cow();
+            where S: Into<Cow<'s, str>> {
+        let needle = needle.into();
         let cur = self.search_start(&needle).ok();
         Suffixes {
             db: self,
@@ -158,7 +158,7 @@ impl SufDB {
         }
     }
 
-    fn contains<'s, S>(&self, needle: S) -> bool where S: IntoCow<'s, str> {
+    fn contains<'s, S>(&self, needle: S) -> bool where S: Into<Cow<'s, str>> {
         self.search(needle).next().is_some()
     }
 
@@ -210,7 +210,7 @@ impl SufDB {
 }
 
 impl SufDB {
-    fn insert<'a, S>(&mut self, doc: S) where S: IntoCow<'a, str> {
+    fn insert<'a, S>(&mut self, doc: S) where S: Into<Cow<'a, str>> {
         let (doc, table) = SuffixTable::new(doc).into_parts();
         let docid = self.insert_document(Document(doc.into_owned()));
         for sufid in table {
@@ -270,7 +270,7 @@ impl Node {
     }
 }
 
-impl<'a, S> iter::FromIterator<S> for SufDB where S: IntoCow<'a, str> {
+impl<'a, S> iter::FromIterator<S> for SufDB where S: Into<Cow<'a, str>> {
     fn from_iter<I>(docs: I) -> SufDB where I: iter::IntoIterator<Item=S> {
         let mut db = SufDB::new();
         db.extend(docs);
@@ -278,7 +278,7 @@ impl<'a, S> iter::FromIterator<S> for SufDB where S: IntoCow<'a, str> {
     }
 }
 
-impl<'a, S> iter::Extend<S> for SufDB where S: IntoCow<'a, str> {
+impl<'a, S> iter::Extend<S> for SufDB where S: Into<Cow<'a, str>> {
     fn extend<I>(&mut self, docs: I) where I: iter::IntoIterator<Item=S> {
         for doc in docs {
             self.insert(doc);
@@ -357,7 +357,7 @@ impl<'d, 's> Iterator for Suffixes<'d, 's> {
 }
 
 mod tests {
-    use std::borrow::IntoCow;
+    use std::borrow::Cow;
     use std::collections::HashSet;
     use std::fmt::Debug;
     use std::hash::Hash;
@@ -366,7 +366,7 @@ mod tests {
 
     fn createdb<'a, I>(docs: I) -> SufDB
             where I: IntoIterator,
-                  <I as IntoIterator>::Item: IntoCow<'a, str> {
+                  <I as IntoIterator>::Item: Into<Cow<'a, str>> {
         FromIterator::from_iter(docs)
     }
 
